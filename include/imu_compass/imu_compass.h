@@ -35,6 +35,7 @@ class IMUCompass {
 
 private:
   ros::NodeHandle node_;
+  ros::NodeHandle node_priv_;
   ros::Subscriber imu_sub_;
   ros::Subscriber mag_sub_;
   ros::Subscriber decl_sub_;
@@ -59,6 +60,8 @@ private:
   bool gyro_update_complete_; //sigfnifies that a gyro update (motion model update) has gone through
 
   double mag_zero_x_, mag_zero_y_, mag_zero_z_;
+
+  std::string parent_frame_;
 
   sensor_msgs::ImuPtr curr_imu_reading_;
 

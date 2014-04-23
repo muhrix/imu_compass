@@ -25,7 +25,7 @@ CPP file for IMU Compass Class that combines gyroscope and magnetometer data to 
 #include "imu_compass/imu_compass.h"
 
 IMUCompass::IMUCompass(ros::NodeHandle &n) :
-    node_(n), curr_imu_reading_(new sensor_msgs::Imu()) {
+    node_(n), node_priv_("~"), curr_imu_reading_(new sensor_msgs::Imu()) {
   // Acquire Parameters
   mag_zero_x_ = 0.0;
   mag_zero_y_ = 0.0;
@@ -38,14 +38,16 @@ IMUCompass::IMUCompass(ros::NodeHandle &n) :
   sensor_timeout_ = 0.5;
   yaw_meas_variance_ = 10.0; 
   heading_prediction_variance_ = 0.01;
-  node_.getParam("compass/sensor_timeout", sensor_timeout_);
-  node_.getParam("compass/yaw_meas_variance", yaw_meas_variance_);
-  node_.getParam("compass/gyro_meas_variance", heading_prediction_variance_);
+  node_priv_.getParam("compass/sensor_timeout", sensor_timeout_);
+  node_priv_.getParam("compass/yaw_meas_variance", yaw_meas_variance_);
+  node_priv_.getParam("compass/gyro_meas_variance", heading_prediction_variance_);
   ROS_INFO("Using variance %f", yaw_meas_variance_);
 
   mag_declination_ = 0.0;
-  node_.getParam("compass/mag_declination", mag_declination_);
+  node_priv_.getParam("compass/mag_declination", mag_declination_);
   ROS_INFO("Using magnetic declination %f (%f degrees)", mag_declination_, mag_declination_ * 180 / M_PI);
+
+  node_priv_.param("parent_frame", parent_frame_, std::string("base_link"));
 
   // Setup Subscribers
   imu_sub_ = node_.subscribe("imu/data", 1000, &IMUCompass::imuCallback, this);
@@ -68,17 +70,17 @@ void IMUCompass::debugCallback(const ros::TimerEvent&) {
   if (!first_gyro_reading_)
     ROS_WARN("Waiting for IMU data, no gyroscope data available)");
   if (!first_mag_reading_)
-    ROS_WARN("Waiting for mag data, no magnetometer data available, Filter not initialized");
+    ROS_WARN("Waiting for mag data, no magnetometer data available. Filter not initialized");
 
   if ((ros::Time::now().toSec() - last_motion_update_time_ > sensor_timeout_) && first_gyro_reading_) { 
     // gyro data is coming in too slowly
-    ROS_WARN("Gyroscope data being receieved too slow or not at all");
+    ROS_WARN("Gyroscope data being received too slow or not at all");
     first_gyro_reading_ = false;
   }
 
   if ((ros::Time::now().toSec() - last_measurement_update_time_ > sensor_timeout_) && first_mag_reading_) { 
     // gyro data is coming in too slowly
-    ROS_WARN("Magnetometer data being receieved too slow or not at all");
+    ROS_WARN("Magnetometer data being received too slow or not at all");
     filter_initialized_ = false;
     first_mag_reading_ = false;
   }
@@ -98,9 +100,9 @@ void IMUCompass::imuCallback(const sensor_msgs::ImuPtr data) {
   tf::StampedTransform transform;
 
   try {
-    listener_.lookupTransform("base_link", data->header.frame_id, ros::Time(0), transform);
+    listener_.lookupTransform(parent_frame_, data->header.frame_id, ros::Time(0), transform);
   } catch (tf::TransformException &ex) {
-    ROS_WARN("Missed transform between base_link and %s", data->header.frame_id.c_str());
+    ROS_WARN_STREAM("Missed transform between " << parent_frame_ << " and " << data->header.frame_id);
     return;
   }
 
@@ -140,9 +142,9 @@ void IMUCompass::magCallback(const geometry_msgs::Vector3StampedConstPtr& data) 
   last_measurement_update_time_ = ros::Time::now().toSec();
   tf::StampedTransform transform;
   try {
-    listener_.lookupTransform("base_link", data->header.frame_id, ros::Time(0), transform);
+    listener_.lookupTransform(parent_frame_, data->header.frame_id, ros::Time(0), transform);
   } catch (tf::TransformException &ex) {
-    ROS_WARN("Missed transform between base_link and %s", data->header.frame_id.c_str());
+    ROS_WARN_STREAM("Missed transform between " << parent_frame_ << " and " << data->header.frame_id);
     return;
   }
 
